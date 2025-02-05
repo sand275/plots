@@ -111,6 +111,14 @@ st.markdown(
     "<span title='Intraday: Chart starts at 8am today; ref price from 16:30 yesterday. Multi-day: First day’s close is baseline.'>ℹ️</span>",
     unsafe_allow_html=True,
 )
+
+# Manual refresh button on front page
+if st.button("Refresh Data"):
+    try:
+        st.experimental_rerun()
+    except AttributeError:
+        pass
+
 _ = st_autorefresh(interval=60 * 1000, limit=None, key="fizzbuzz")
 
 # ----------------------------
@@ -193,7 +201,8 @@ for key in selected_tickers:
         name=key.upper(),
         line=line_style,
     ))
-    current_value = float(df['Close'].iloc[-1])
+    # Use .item() to get a Python float from the single element Series.
+    current_value = df['Close'].iloc[-1].item()
     current_values[key.upper()] = current_value
     last_time = df.index[-1]
     last_pct = df['PctChange'].iloc[-1]
