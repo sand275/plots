@@ -22,7 +22,7 @@ yfinance_tickers = {
     'nq': 'NQ=F',         # Nasdaq 100
 }
 
-# Define groups
+# Define groups (each group is a list of tickers)
 groups = {
     "Majors": ['sx5e', 'es', 'ftse'],
     "Europe": [k for k in yfinance_tickers.keys() if k not in ['es', 'nq']],
@@ -50,7 +50,7 @@ def fetch_data(ticker, lookback_days):
       
     - For lookback_days >= 1:
       Downloads (lookback_days+1) days of daily data,
-      localizes to Europe/London, and returns df (ref_price will be computed later).
+      localizes to Europe/London.
     """
     if lookback_days == 0:
         # Download 2-day intraday data (1-minute)
@@ -79,12 +79,12 @@ def fetch_data(ticker, lookback_days):
         df_today = df_all[df_all.index >= start_today]
         return df_today, ref_price
     else:
-        # Download daily data for lookback_days+1 days
+        # Download daily data for lookback_days+1 days.
         df = yf.download(ticker, period=f"{lookback_days+1}d", interval="1d", progress=False)
         if df.empty:
             return None, None
         df.index = pd.to_datetime(df.index)
-        # Localize daily data to Europe/London
+        # Daily data is tz-naive; localize to Europe/London.
         df = df.tz_localize(ZoneInfo("Europe/London"))
         return df, None
 
@@ -92,11 +92,8 @@ def compute_pct_change(df, lookback_days, ref_price=None):
     """
     Computes percentage change relative to the reference price.
     
-    - For lookback_days == 0 (intraday):
-      Uses the provided ref_price (from yesterday at 16:30).
-      
-    - For daily data (lookback_days >= 1):
-      Uses the first day's Close so that the first point is 0%.
+    - For intraday (lookback_days==0): uses the provided ref_price (from yesterday at 16:30).
+    - For daily data (lookback_days >= 1): uses the first day's Close so that its percent change is 0%.
     """
     if lookback_days == 0:
         base = ref_price
@@ -127,19 +124,22 @@ mode = st.sidebar.radio("Select Mode", ("Group mode", "Individual mode"))
 # Slider: 0 (today only) to 10 days; default 0.
 lookback_days = st.sidebar.slider("Lookback Period (days)", min_value=0, max_value=10, value=0, step=1)
 
-selected_tickers = []
 if mode == "Group mode":
-    # Default group: "Majors"
-    selected_groups = st.sidebar.multiselect("Select Groups", options=list(groups.keys()), default=["Majors"])
-    for grp in selected_groups:
-        selected_tickers.extend(groups[grp])
-    selected_tickers = list(set(selected_tickers))
+    # Use st.pills for single-choice group selection.
+    selected_group = st.sidebar.pills(
+        "Select Group",
+        options=list(groups.keys()),
+        selection_mode="single",
+        default="Majors",
+        help="Select one of the predefined groups."
+    )
+    selected_tickers = groups[selected_group]
 else:
     options = list(yfinance_tickers.keys())
     selected_tickers = st.sidebar.multiselect("Select Indices", options=options)
 
 if not selected_tickers:
-    st.warning("Please select at least one index to plot.")
+    st.warning("Please select at least one ticker to plot.")
     st.stop()
 
 # ----------------------------
@@ -152,7 +152,6 @@ stale_tickers = []
 # Loop over selected tickers
 for key in selected_tickers:
     yf_ticker = yfinance_tickers[key]
-    # Fetch data and (for 0-day) the reference price
     df, ref_price = fetch_data(yf_ticker, lookback_days)
     if df is None or df.empty:
         st.error(f"No data for {key.upper()} ({yf_ticker})")
@@ -160,7 +159,7 @@ for key in selected_tickers:
     df, used_ref = compute_pct_change(df, lookback_days, ref_price)
     color = fixed_colors.get(key, None)
     
-    # For daily data, show lines with markers; for intraday, use lines only.
+    # For daily data (lookback_days > 0), show lines with markers; intraday: lines only.
     mode_trace = "lines+markers" if lookback_days > 0 else "lines"
     fig.add_trace(go.Scatter(
         x=df.index,
@@ -170,7 +169,7 @@ for key in selected_tickers:
         line=dict(color=color) if color else None,
     ))
     
-    # Store current level and get the last data point.
+    # Store current level and get last data point.
     current_value = float(df['Close'].iloc[-1])
     current_values[key.upper()] = current_value
     last_time = df.index[-1]
@@ -211,7 +210,7 @@ fig.update_layout(
     xaxis_title="Time (UK)",
     yaxis_title="Percentage Change (%)",
     legend_title="Ticker",
-    height=600,  # Reduced height for less tall chart
+    height=600,
     width=1200,
     template="plotly_dark",
     margin=dict(l=60, r=150, t=80, b=60)
